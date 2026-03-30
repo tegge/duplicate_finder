@@ -68,11 +68,11 @@ func fullRead(path, algo string) (string, error) {
 		}
 		return hex.EncodeToString(h.Sum(nil)), nil
 	case "xxh3":
-		data, err := io.ReadAll(f)
-		if err != nil {
+		h := xxh3.New()
+		if _, err := io.CopyBuffer(h, f, buf); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("%x", xxh3.Hash(data)), nil
+		return fmt.Sprintf("%x", h.Sum64()), nil
 	case "blake3":
 		h := blake3.New()
 		if _, err := io.CopyBuffer(h, f, buf); err != nil {

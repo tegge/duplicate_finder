@@ -87,10 +87,12 @@ func runNearImageMode(
 			}
 		}()
 	}
-	for _, p := range imagePaths {
-		jobs <- p
-	}
-	close(jobs)
+	go func() {
+		for _, p := range imagePaths {
+			jobs <- p
+		}
+		close(jobs)
+	}()
 	go func() {
 		wg.Wait()
 		close(results)
