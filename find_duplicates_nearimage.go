@@ -205,29 +205,33 @@ func runNearImageMode(
 			})
 		}
 
+		header := fmt.Sprintf("--- Group %d  dist:%d  %d files ---", dupGroups, minDist, len(group))
+		fmt.Fprintln(fOut, header)
+		fmt.Println(header)
+
+		for _, img := range toKeep {
+			line := fmt.Sprintf("  KEEP  %s", img.Path)
+			fmt.Fprintln(fOut, line)
+			fmt.Println(line)
+			if csvMode {
+				csvRecords = append(csvRecords, csvRec{dupGroups, minDist, img.SizeB, "KEEP", img.Path})
+			}
+		}
+
 		for _, img := range toDelete {
 			removableFiles++
 			removableBytes += img.SizeB
 			dirDupCount[filepath.Dir(img.Path)]++
-			fmt.Fprintln(fOut, img.Path)
-			fmt.Println(img.Path)
+			line := fmt.Sprintf("  DEL   %s", img.Path)
+			fmt.Fprintln(fOut, line)
+			fmt.Println(line)
 			if csvMode {
-				var keepSz int64
-				if len(toKeep) > 0 {
-					keepSz = toKeep[0].SizeB
-				}
-				_ = keepSz
 				csvRecords = append(csvRecords, csvRec{dupGroups, minDist, img.SizeB, "DELETE", img.Path})
 			}
 			if deleteMode {
 				_ = os.Remove(img.Path)
 			} else if trashMode {
 				_ = trashFile(img.Path)
-			}
-		}
-		if csvMode {
-			for _, img := range toKeep {
-				csvRecords = append(csvRecords, csvRec{dupGroups, minDist, img.SizeB, "KEEP", img.Path})
 			}
 		}
 	}

@@ -29,7 +29,7 @@ find_duplicates [options] PATH
 | `-mode MODE` | `exact` | Scan mode: `exact` (byte-identical) or `near-image` (perceptual hash) |
 | `-threshold N` | `10` | Hamming distance threshold for `-mode near-image` (0 = identical, 64 = max) |
 | `-hash-algo ALGO` | `blake3` | Hash algorithm: `sha256`, `xxh3`, `blake3` |
-| `-mmap` | `true` | Use mmap for full hashing (set `false` for network/FUSE mounts) |
+| `-mmap` | `false` | Use mmap for full hashing — only enable on fast local SSDs; harmful on NAS/spinning disks |
 | `-db PATH` | – | SQLite cache path — avoids re-hashing unchanged files (~200 MB / 1 M files) |
 | `-workers N` | NumCPU | Parallel hash workers (reduce to 1–2 for HDD or NAS) |
 | `-min-size BYTES` | `1` | Minimum file size to consider (default skips zero-byte files) |
@@ -82,6 +82,97 @@ find_duplicates [options] PATH
 
 # Limit to files under 500 MB, write JSON report
 ./find_duplicates -max-size 524288000 -json /Volumes/Backup
+```
+
+## Near-image mode
+
+Near-image mode finds **visually similar** images — photos that are not byte-identical but look alike. Use it for:
+- The same photo saved at different quality levels or resolutions
+- Photos that were cropped, rotated, or slightly recoloured
+- WhatsApp/social-media re-encodes of originals
+
+### How it works
+
+1. **Walk** — same as exact mode: size-group all image files (jpg, jpeg, png, gif, tif, tiff).
+2. **Perceptual hash** — each image is decoded into a bitmap and a 64-bit **dHash** (difference hash) is computed by scaling the image to 9×8 pixels and comparing adjacent pixels.
+3. **Hamming distance grouping** — every pair of images is compared by counting differing bits (`XOR` + `popcount`). Pairs with distance ≤ `-threshold` are grouped together via union-find.
+4. **Sort & keep** — within each group the same path-policy and preference rules as exact mode apply (origin, likely_duplicates, resolution, EXIF date).
+
+### Threshold guide
+
+| `-threshold` | Meaning |
+|---|---|
+| `0` | Pixel-identical after resize — essentially exact duplicates |
+| `1–5` | Near-identical; only trivial compression differences |
+| `6–10` | *(default)* Slight re-encodes, minor crops, watermarks |
+| `11–20` | Filtered/edited versions, colour-graded copies |
+| `>20` | Loosely similar scenes — high false-positive rate |
+
+### Expected accuracy
+
+- **Low threshold (0–5):** Very high precision, few false positives. May miss lightly edited copies.
+- **Default threshold (10):** Good balance for photo libraries. Expect occasional false positives for photos of very similar scenes (e.g. two consecutive shots of the same subject).
+- **High threshold (>15):** Many false positives likely. Review every group manually before deleting.
+
+**Known false-positive sources:**
+- The same photo with a colour filter applied (Instagram-style)
+- Night/day versions of the same scene
+- Two photos of the same landscape, building, or document
+- Screenshots of similar UI screens
+
+### Flags that do NOT apply to near-image mode
+
+| Flag | Reason |
+|---|---|
+| `-hash-algo` | Near-image uses perceptual dHash, not a crypto/checksum hash |
+| `-mmap` | Image decoding uses the standard decoder, not mmap |
+| `-db` / `-scan-id` / `-resume` | The SQLite hash cache only stores exact-mode hashes; near-image hashes are not cached |
+
+All other flags (`-workers`, `-origin`, `-likely_duplicates`, `-exclude`, `-only`, `-min-size`, `-max-size`, `-delete`, `-trash`, `-delete-empty-dirs`, `-json`, `-csv`) work normally.
+
+### Performance
+
+Near-image mode is **significantly slower** than exact mode:
+- Every candidate image is **fully decoded** into a bitmap in memory (~96 MB for a 24 MP photo per worker).
+- The grouping step is **O(n²)** — 10 000 images → ~50 M comparisons; 50 000 images → ~1.25 B comparisons.
+- Reduce `-workers` on memory-constrained hosts; with the default `NumCPU` workers, peak RAM usage is roughly `workers × avg_decoded_image_size`.
+
+### Sample near-image output
+
+```
+Scanned           : 8 400 image files in 14m22s
+Similarity groups : 312
+
+--- Group 1  dist:2  2 files ---
+  KEEP  /Photos/Masters/IMG_1042.jpg
+  DEL   /Photos/Exports/IMG_1042_web.jpg
+
+--- Group 2  dist:8  3 files ---
+  KEEP  /Photos/Masters/DSC_0091.jpg
+  DEL   /Photos/Filtered/DSC_0091_vivid.jpg
+  DEL   /Photos/WhatsApp/IMG-20230715-WA0003.jpg
+
+Results:
+  Similar groups   : 312
+  Removable files  : 498
+  Potential freed  : 3.2 GiB
+```
+
+Groups are written in the same format to `dryrun_near_duplicates.txt` (dry-run) or `near_duplicates.txt` (with `-delete`/`-trash`).
+
+## Performance
+Results running with 1-8 workers. 
+Not much benefit in my set-up as the DiskIO was limiting after 2 workers.
+
+```
+Scanned           : 17262 files in 5m42.377526815s
+Scanned           : 17262 files in 2m53.893585607s
+Scanned           : 17262 files in 2m25.548567898s
+Scanned           : 17262 files in 2m8.680930305s
+Scanned           : 17262 files in 2m7.64361788s
+Scanned           : 17262 files in 2m6.882060952s
+Scanned           : 17262 files in 2m9.088481311s
+Scanned           : 17262 files in 2m12.577234642s
 ```
 
 ## Output files
