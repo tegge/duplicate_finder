@@ -143,6 +143,19 @@ func trashFile(path string) error {
 	return os.Rename(path, dest)
 }
 
+func formatBytes(b int64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1f GiB", float64(b)/(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1f MiB", float64(b)/(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.1f KiB", float64(b)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
 func main() {
 	started := time.Now()
 
@@ -633,12 +646,27 @@ func main() {
 			}
 		}
 
+		hashAbbr := groupHash
+		if len(hashAbbr) > 8 {
+			hashAbbr = hashAbbr[:8]
+		}
+		header := fmt.Sprintf("--- Group %d  hash:%s  size:%s  %d files ---",
+			duplicateGroups, hashAbbr, formatBytes(groupSize), len(group))
+		fmt.Fprintln(fOut, header)
+		fmt.Println(header)
+
+		for _, p := range toKeep {
+			line := fmt.Sprintf("  KEEP  %s", p)
+			fmt.Fprintln(fOut, line)
+			fmt.Println(line)
+		}
 		for _, p := range toDelete {
 			removableFiles++
 			removableBytes += sizeByPath[p]
 			dirDupCount[filepath.Dir(p)]++
-			fmt.Fprintln(fOut, p)
-			fmt.Println(p)
+			line := fmt.Sprintf("  DEL   %s", p)
+			fmt.Fprintln(fOut, line)
+			fmt.Println(line)
 			if *deleteMode {
 				_ = os.Remove(p)
 			} else if *trashMode {

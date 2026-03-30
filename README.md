@@ -84,6 +84,21 @@ find_duplicates [options] PATH
 ./find_duplicates -max-size 524288000 -json /Volumes/Backup
 ```
 
+## Performance
+Results running with 1-8 workers. 
+Not much benefit in my set-up as the DiskIO was limiting after 2 workers.
+
+```
+Scanned           : 17262 files in 5m42.377526815s
+Scanned           : 17262 files in 2m53.893585607s
+Scanned           : 17262 files in 2m25.548567898s
+Scanned           : 17262 files in 2m8.680930305s
+Scanned           : 17262 files in 2m7.64361788s
+Scanned           : 17262 files in 2m6.882060952s
+Scanned           : 17262 files in 2m9.088481311s
+Scanned           : 17262 files in 2m12.577234642s
+```
+
 ## Near-image mode
 
 Near-image mode finds **visually similar** images — photos that are not byte-identical but look alike. Use it for:
@@ -201,6 +216,15 @@ Pipeline stats:
   Size candidates  : 9840 files (same size as ≥1 other)
   After partial    : 1204 remain, 8636 filtered out
   After full hash  : 388 confirmed duplicates, 816 filtered out
+
+--- Group 1  hash:a1b2c3d4  size:3.2 MiB  2 files ---
+  KEEP  /Photos/Masters/IMG_1042.jpg
+  DEL   /Photos/Exports/IMG_1042.jpg
+
+--- Group 2  hash:e5f6a7b8  size:14.7 MiB  3 files ---
+  KEEP  /Photos/Masters/DSC_0091.CR2
+  DEL   /Photos/Backup/DSC_0091.CR2
+  DEL   /Photos/OldBackup/DSC_0091.CR2
 
 Results:
   Duplicate groups : 134
