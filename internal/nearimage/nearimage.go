@@ -70,7 +70,9 @@ func Compute(path string) (*ImageInfo, error) {
 	}
 
 	b := img.Bounds()
-	st, _ := os.Stat(path)
+	img = nil // release decoded bitmap; GC can reclaim it before EXIF parsing
+
+	st, _ := f.Stat()
 	var sizeB int64
 	if st != nil {
 		sizeB = st.Size()

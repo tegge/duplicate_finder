@@ -8,11 +8,15 @@ import (
 	"hash"
 	"io"
 	"os"
+	"sync"
 
 	mmap "github.com/edsrzf/mmap-go"
 	"github.com/zeebo/blake3"
 	"github.com/zeebo/xxh3"
 )
+
+var partialBufPool = sync.Pool{New: func() any { b := make([]byte, 4<<10); return &b }}
+var fullBufPool = sync.Pool{New: func() any { b := make([]byte, 256<<10); return &b }}
 
 func Partial(path string) (string, error) {
 	const chunk = 4 << 10
@@ -30,7 +34,9 @@ func Partial(path string) (string, error) {
 	size := info.Size()
 
 	h := sha256.New()
-	buf := make([]byte, chunk)
+	bufp := partialBufPool.Get().(*[]byte)
+	buf := *bufp
+	defer partialBufPool.Put(bufp)
 
 	n, _ := f.Read(buf)
 	_, _ = h.Write(buf[:n])
@@ -57,8 +63,9 @@ func fullRead(path, algo string) (string, error) {
 	}
 	defer f.Close()
 
-	const bufSize = 256 << 10
-	buf := make([]byte, bufSize)
+	bufp := fullBufPool.Get().(*[]byte)
+	buf := *bufp
+	defer fullBufPool.Put(bufp)
 
 	switch algo {
 	case "sha256":

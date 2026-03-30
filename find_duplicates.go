@@ -396,18 +396,43 @@ func main() {
 		}
 	}
 
-	partialMap := make(map[string][]string)
-	for _, grp := range sizeMap {
-		if len(grp) < 2 {
-			continue
-		}
-		for _, p := range grp {
-			ph, err := hashing.Partial(p)
-			if err != nil {
+	type partialResult struct {
+		path string
+		hash string
+	}
+	partialJobs := make(chan string)
+	partialResults := make(chan partialResult, *workers)
+	var partialWg sync.WaitGroup
+	for i := 0; i < *workers; i++ {
+		partialWg.Add(1)
+		go func() {
+			defer partialWg.Done()
+			for p := range partialJobs {
+				if ph, err := hashing.Partial(p); err == nil {
+					partialResults <- partialResult{p, ph}
+				}
+			}
+		}()
+	}
+	go func() {
+		for _, grp := range sizeMap {
+			if len(grp) < 2 {
 				continue
 			}
-			partialMap[ph] = append(partialMap[ph], p)
+			for _, p := range grp {
+				partialJobs <- p
+			}
 		}
+		close(partialJobs)
+	}()
+	go func() {
+		partialWg.Wait()
+		close(partialResults)
+	}()
+
+	partialMap := make(map[string][]string)
+	for r := range partialResults {
+		partialMap[r.hash] = append(partialMap[r.hash], r.path)
 	}
 
 	candidateGroups := make(map[string][]string)
