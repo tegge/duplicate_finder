@@ -74,8 +74,8 @@ func runNearImageMode(
 		info *nearimage.ImageInfo
 		err  error
 	}
-	jobs := make(chan string, len(imagePaths))
-	results := make(chan hashResult, len(imagePaths))
+	jobs := make(chan string, workers*2)
+	results := make(chan hashResult, workers*2)
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		wg.Add(1)

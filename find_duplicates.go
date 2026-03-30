@@ -152,7 +152,7 @@ func main() {
 	var excludes multiFlag
 	flag.Var(&excludes, "exclude", "Exclude pattern, repeatable")
 	hashAlgo := flag.String("hash-algo", "blake3", "sha256|xxh3|blake3")
-	mmapFlag := flag.Bool("mmap", true, "Use mmap for full hashing")
+	mmapFlag := flag.Bool("mmap", false, "Use mmap for full hashing (disable on NAS/spinning disks)")
 	dbPath := flag.String("db", "", "SQLite cache DB path")
 	workers := flag.Int("workers", runtime.NumCPU(), "Number of parallel hash workers (reduce for HDD/NAS)")
 	minSize := flag.Int64("min-size", 1, "Minimum file size in bytes to consider (default: 1, skips empty files)")
@@ -254,6 +254,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to open db: %v", err)
 		}
+		cache.Configure(db)
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, inode INTEGER, mtime INTEGER, size INTEGER, hash TEXT)`)
 		if err != nil {
 			log.Fatalf("failed to init db: %v", err)
@@ -433,6 +434,17 @@ func main() {
 		}
 	}
 
+	var cacheWrite chan cache.CacheEntry
+	var cacheWg sync.WaitGroup
+	if dbEnabled {
+		cacheWrite = make(chan cache.CacheEntry, 256)
+		cacheWg.Add(1)
+		go func() {
+			defer cacheWg.Done()
+			cache.RunBatchWriter(db, cacheWrite)
+		}()
+	}
+
 	jobs := make(chan *FileJob)
 	results := make(chan result)
 	var wg sync.WaitGroup
@@ -450,7 +462,7 @@ func main() {
 					} else {
 						h, err = hashing.Full(job.path, *mmapFlag, *hashAlgo)
 						if err == nil {
-							cache.UpdateDB(db, job.path, h)
+							cacheWrite <- cache.CacheEntry{Path: job.path, Hash: h}
 						}
 					}
 				} else {
@@ -487,6 +499,10 @@ func main() {
 		}
 		hashGroups[res.hash] = append(hashGroups[res.hash], res.path)
 		sizeByPath[res.path] = res.size
+	}
+	if dbEnabled {
+		close(cacheWrite)
+		cacheWg.Wait()
 	}
 
 	var fullSurvivors int64
