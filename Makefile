@@ -1,5 +1,6 @@
-BINARY   := find_duplicates
-GOFLAGS  := -trimpath -ldflags="-s -w"
+BINARY      := find_duplicates
+GOFLAGS     := -trimpath -ldflags="-s -w"
+export GOTOOLCHAIN := local
 
 .PHONY: build test vet fmt tidy clean
 

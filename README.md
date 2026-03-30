@@ -137,6 +137,8 @@ Within each tier, a preference sort pushes higher-deletion-priority files to the
 
 ## Build
 
+**Requires Go 1.23+** (Debian's packaged `golang-1.19` is too old; install from [go.dev/dl](https://go.dev/dl/)).
+
 ```sh
 make build
 # or

@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Makefile`, `README.md`, `.gitignore`, `.editorconfig`
 
 ### Changed
+- Minimum Go version lowered from 1.25 to **1.23** — `modernc.org/sqlite` pinned to `v1.39.0`, `modernc.org/libc` to `v1.66.3`, `golang.org/x/sys` to `v0.34.0` (all declare `go 1.23.0`)
 - `._*` macOS sidecar files are silently skipped and counted; no longer written to a report file
 - `KEEP:` / `DEL:` prefixes in `skipped_duplicates.txt` for machine-readable output
 - Replaced `os.ReadFile` with streaming `io.CopyBuffer` for sha256/blake3 full hashing
