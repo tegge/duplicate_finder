@@ -246,6 +246,10 @@ func main() {
 	dbEnabled := *dbPath != ""
 	var db *sql.DB
 	if dbEnabled {
+		if fi, statErr := os.Stat(*dbPath); statErr == nil && fi.IsDir() {
+			log.Fatalf("-db %q is a directory; provide a file path instead, e.g. -db %s/dupfinder.db",
+				*dbPath, strings.TrimRight(*dbPath, "/"))
+		}
 		db, err = sql.Open("sqlite", *dbPath)
 		if err != nil {
 			log.Fatalf("failed to open db: %v", err)
