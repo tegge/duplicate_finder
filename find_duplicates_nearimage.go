@@ -25,14 +25,14 @@ type nearGroupJSON struct {
 
 // nearReportJSON is the top-level JSON structure for near-image mode.
 type nearReportJSON struct {
-	Scanned         int64           `json:"scanned"`
-	ElapsedSeconds  float64         `json:"elapsed_s"`
-	Threshold       int             `json:"threshold"`
-	SimilarGroups   int64           `json:"similar_groups"`
-	RemovableFiles  int64           `json:"removable_files"`
-	RemovableBytes  int64           `json:"removable_bytes"`
-	TopDirs         []dirStatJSON   `json:"top_dirs,omitempty"`
-	Groups          []nearGroupJSON `json:"groups"`
+	Scanned        int64           `json:"scanned"`
+	ElapsedSeconds float64         `json:"elapsed_s"`
+	Threshold      int             `json:"threshold"`
+	SimilarGroups  int64           `json:"similar_groups"`
+	RemovableFiles int64           `json:"removable_files"`
+	RemovableBytes int64           `json:"removable_bytes"`
+	TopDirs        []dirStatJSON   `json:"top_dirs,omitempty"`
+	Groups         []nearGroupJSON `json:"groups"`
 }
 
 // runNearImageMode is the entry point for -mode near-image.
