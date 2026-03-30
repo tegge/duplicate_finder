@@ -1,0 +1,31 @@
+# Binary
+find_duplicates
+find_duplicates_new
+
+# Output files produced by the tool
+dryrun_duplicates.txt
+duplicates.txt
+skipped_duplicates.txt
+dot_underscore_files.txt
+
+# SQLite cache
+*.db
+*.db-shm
+*.db-wal
+
+# macOS
+.DS_Store
+._*
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Go build cache artifacts
+/vendor/
+
+# other
+project_beschreibung.md
+Duplicatefinder_context.md
