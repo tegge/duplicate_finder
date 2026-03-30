@@ -210,7 +210,7 @@ func runNearImageMode(
 		fmt.Println(header)
 
 		for _, img := range toKeep {
-			line := fmt.Sprintf("  KEEP  %s", img.Path)
+			line := fmt.Sprintf("  KEEP  %s  (%dx%d, %s)", img.Path, img.Width, img.Height, formatBytes(img.SizeB))
 			fmt.Fprintln(fOut, line)
 			fmt.Println(line)
 			if csvMode {
@@ -222,7 +222,7 @@ func runNearImageMode(
 			removableFiles++
 			removableBytes += img.SizeB
 			dirDupCount[filepath.Dir(img.Path)]++
-			line := fmt.Sprintf("  DEL   %s", img.Path)
+			line := fmt.Sprintf("  DEL   %s  (%dx%d, %s)", img.Path, img.Width, img.Height, formatBytes(img.SizeB))
 			fmt.Fprintln(fOut, line)
 			fmt.Println(line)
 			if csvMode {

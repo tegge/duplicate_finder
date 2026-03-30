@@ -159,13 +159,13 @@ Scanned           : 8 400 image files in 14m22s
 Similarity groups : 312
 
 --- Group 1  dist:2  2 files ---
-  KEEP  /Photos/Masters/IMG_1042.jpg
-  DEL   /Photos/Exports/IMG_1042_web.jpg
+  KEEP  /Photos/Masters/IMG_1042.jpg  (4032x3024, 6.1 MiB)
+  DEL   /Photos/Exports/IMG_1042_web.jpg  (1920x1440, 1.2 MiB)
 
 --- Group 2  dist:8  3 files ---
-  KEEP  /Photos/Masters/DSC_0091.jpg
-  DEL   /Photos/Filtered/DSC_0091_vivid.jpg
-  DEL   /Photos/WhatsApp/IMG-20230715-WA0003.jpg
+  KEEP  /Photos/Masters/DSC_0091.jpg  (4032x3024, 8.4 MiB)
+  DEL   /Photos/Filtered/DSC_0091_vivid.jpg  (4032x3024, 5.1 MiB)
+  DEL   /Photos/WhatsApp/IMG-20230715-WA0003.jpg  (1600x1200, 0.3 MiB)
 
 Results:
   Similar groups   : 312
@@ -218,11 +218,11 @@ Pipeline stats:
   After full hash  : 388 confirmed duplicates, 816 filtered out
 
 --- Group 1  hash:a1b2c3d4  size:3.2 MiB  2 files ---
-  KEEP  /Photos/Masters/IMG_1042.jpg
+  KEEP  /Photos/Masters/IMG_1042.jpg  [origin]
   DEL   /Photos/Exports/IMG_1042.jpg
 
 --- Group 2  hash:e5f6a7b8  size:14.7 MiB  3 files ---
-  KEEP  /Photos/Masters/DSC_0091.CR2
+  KEEP  /Photos/Masters/DSC_0091.CR2  [outside likely-duplicates]
   DEL   /Photos/Backup/DSC_0091.CR2
   DEL   /Photos/OldBackup/DSC_0091.CR2
 

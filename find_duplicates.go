@@ -656,7 +656,20 @@ func main() {
 		fmt.Println(header)
 
 		for _, p := range toKeep {
-			line := fmt.Sprintf("  KEEP  %s", p)
+			reason := ""
+			if origin != "" && rules.IsUnder(p, origin) {
+				reason = "  [origin]"
+			} else if likely != "" && !rules.IsUnder(p, likely) && func() bool {
+				for _, d := range toDelete {
+					if rules.IsUnder(d, likely) {
+						return true
+					}
+				}
+				return false
+			}() {
+				reason = "  [outside likely-duplicates]"
+			}
+			line := fmt.Sprintf("  KEEP  %s%s", p, reason)
 			fmt.Fprintln(fOut, line)
 			fmt.Println(line)
 		}
