@@ -93,15 +93,18 @@ func TestSelectKeepDelete_NoOriginInGroup(t *testing.T) {
 	}
 }
 
-func TestSortByPreference_PendingFirst(t *testing.T) {
+func TestSortByPreference_PendingLast(t *testing.T) {
 	paths := []string{
 		p("/data/photo.jpg"),
 		p("/data/.pending_photo.jpg"),
 		p("/data/photo (1).jpg"),
 	}
 	sorted := rules.SortByPreference(paths)
-	if sorted[0] != p("/data/.pending_photo.jpg") {
-		t.Errorf("want .pending_ first, got %s", sorted[0])
+	if sorted[0] != p("/data/photo.jpg") {
+		t.Errorf("want plain file first (keep-worthy), got %s", sorted[0])
+	}
+	if sorted[len(sorted)-1] != p("/data/.pending_photo.jpg") {
+		t.Errorf("want .pending_ last (delete-worthy), got %s", sorted[len(sorted)-1])
 	}
 }
 
@@ -111,8 +114,26 @@ func TestSortByPreference_CopyAfterNormal(t *testing.T) {
 		p("/data/photo.jpg"),
 	}
 	sorted := rules.SortByPreference(paths)
-	if sorted[0] != p("/data/photo (2).jpg") {
-		t.Errorf("want copy variant first (prefer-delete), got %s", sorted[0])
+	if sorted[0] != p("/data/photo.jpg") {
+		t.Errorf("want plain file first (keep-worthy), got %s", sorted[0])
+	}
+	if sorted[1] != p("/data/photo (2).jpg") {
+		t.Errorf("want copy variant last (delete-worthy), got %s", sorted[1])
+	}
+}
+
+func TestKeepDelete_CopyVariantDeleted(t *testing.T) {
+	paths := []string{
+		p("/data/photo (1).jpg"),
+		p("/data/photo.jpg"),
+	}
+	sorted := rules.SortByPreference(paths)
+	keep, del := rules.SelectKeepDelete(sorted, "", "")
+	if len(keep) != 1 || keep[0] != p("/data/photo.jpg") {
+		t.Errorf("keep: want plain file, got %v", keep)
+	}
+	if len(del) != 1 || del[0] != p("/data/photo (1).jpg") {
+		t.Errorf("del: want copy variant, got %v", del)
 	}
 }
 

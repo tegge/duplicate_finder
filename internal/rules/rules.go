@@ -45,7 +45,7 @@ func SortByPreference(paths []string) []string {
 		ai := PreferDelete(out[i])
 		aj := PreferDelete(out[j])
 		if ai != aj {
-			return ai < aj
+			return ai > aj
 		}
 		return out[i] < out[j]
 	})
