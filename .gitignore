@@ -26,6 +26,9 @@ dot_underscore_files.txt
 # Go build cache artifacts
 /vendor/
 
+# Cross-compiled release binaries
+/dist/
+
 # other
 project_beschreibung.md
 Duplicatefinder_context.md
