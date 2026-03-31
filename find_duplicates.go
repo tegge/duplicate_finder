@@ -69,7 +69,8 @@ type pipelineJSON struct {
 }
 
 type reportJSON struct {
-	Scanned              int64          `json:"scanned"`
+	Scanned              int64          `json:"walked"`
+	MatchedFilter        int64          `json:"matched_filter,omitempty"`
 	ElapsedSeconds       float64        `json:"elapsed_s"`
 	WalkErrors           int64          `json:"walk_errors,omitempty"`
 	DotUnderscoreSkipped int64          `json:"dot_underscore_skipped,omitempty"`
@@ -298,6 +299,7 @@ func main() {
 	sizeMap := make(map[int64][]string)
 	seenInodes := make(map[uint64]struct{})
 	seenDirs := make(map[string]struct{})
+	var walkedFiles int64
 	var scannedFiles int64
 	var walkErrors int64
 	var dotUnderscoreSkipped int64
@@ -324,6 +326,8 @@ func main() {
 			dotUnderscoreSkipped++
 			return nil
 		}
+
+		walkedFiles++
 
 		rel, _ := filepath.Rel(root, path)
 		for _, pat := range excludes {
@@ -689,7 +693,10 @@ func main() {
 	}
 
 	elapsed := time.Since(started)
-	fmt.Printf("Scanned           : %d files in %s\n", scannedFiles, elapsed)
+	fmt.Printf("Walked            : %d files in %s\n", walkedFiles, elapsed)
+	if scannedFiles != walkedFiles {
+		fmt.Printf("Matched filter    : %d files\n", scannedFiles)
+	}
 	if walkErrors > 0 {
 		fmt.Printf("Walk errors       : %d (permission denied etc.)\n", walkErrors)
 	}
@@ -777,7 +784,13 @@ func main() {
 			topDirs = append(topDirs, dirStatJSON{Dir: dc.dir, RemovableFiles: dc.count})
 		}
 		rep := reportJSON{
-			Scanned:              scannedFiles,
+			Scanned: walkedFiles,
+			MatchedFilter: func() int64 {
+				if scannedFiles != walkedFiles {
+					return scannedFiles
+				}
+				return 0
+			}(),
 			ElapsedSeconds:       elapsed.Seconds(),
 			WalkErrors:           walkErrors,
 			DotUnderscoreSkipped: dotUnderscoreSkipped,
