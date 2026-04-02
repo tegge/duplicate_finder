@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"container/heap"
 	"database/sql"
 	"encoding/csv"
@@ -91,11 +92,12 @@ func (m *multiFlag) Set(v string) error {
 }
 
 func Usage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s [options] PATH\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Usage: %s [options] PATH [PATH...]\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "Options:")
-	fmt.Fprintln(os.Stderr, "  -path PATH               Root to scan (or positional)")
-	fmt.Fprintln(os.Stderr, "  -origin PATH             Protected directory (keep copies there)")
-	fmt.Fprintln(os.Stderr, "  -likely_duplicates PATH  Prefer deleting copies there")
+	fmt.Fprintln(os.Stderr, "  -path PATH               Root to scan, repeatable (also accepted as positional args)")
+	fmt.Fprintln(os.Stderr, "  -origin PATH             Protected directory, repeatable")
+	fmt.Fprintln(os.Stderr, "  -likely_duplicates PATH  Prefer deleting copies here, repeatable")
+	fmt.Fprintln(os.Stderr, "  -apply FILE              Apply a dry-run output file (execute all DEL entries)")
 	fmt.Fprintln(os.Stderr, "  -exclude PATTERN         Exclude glob pattern (matches rel path and basename), repeatable")
 	fmt.Fprintln(os.Stderr, "  -only EXTS               Only scan these extensions, comma-separated (e.g. jpg,png,mp4)")
 	fmt.Fprintln(os.Stderr, "  -mode MODE               Scan mode: exact|near-image (default: exact)")
@@ -157,12 +159,83 @@ func formatBytes(b int64) string {
 	}
 }
 
+func pruneEmptyParents(dir string, stopDirs []string) {
+	for {
+		for _, s := range stopDirs {
+			if dir == s {
+				return
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) != 0 {
+			return
+		}
+		if os.Remove(dir) != nil {
+			return
+		}
+		dir = parent
+	}
+}
+
+func applyPlan(planFile string, trash, deleteEmptyDirs bool) {
+	f, err := os.Open(planFile)
+	if err != nil {
+		log.Fatalf("apply: cannot open %s: %v", planFile, err)
+	}
+	defer f.Close()
+
+	var deleted, failed int
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "  DEL   ") {
+			continue
+		}
+		path := strings.TrimPrefix(line, "  DEL   ")
+		if i := strings.LastIndex(path, "  ("); i > 0 {
+			path = path[:i]
+		}
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		var delErr error
+		if trash {
+			delErr = trashFile(path)
+		} else {
+			delErr = os.Remove(path)
+		}
+		if delErr != nil {
+			fmt.Fprintf(os.Stderr, "apply: failed to remove %s: %v\n", path, delErr)
+			failed++
+			continue
+		}
+		deleted++
+		if deleteEmptyDirs {
+			pruneEmptyParents(filepath.Dir(path), nil)
+		}
+	}
+	fmt.Printf("Apply: deleted %d files", deleted)
+	if failed > 0 {
+		fmt.Printf(", %d failures", failed)
+	}
+	fmt.Println()
+}
+
 func main() {
 	started := time.Now()
 
-	pathFlag := flag.String("path", "", "Root to scan (or positional)")
-	originFlag := flag.String("origin", "", "Protected directory")
-	likelyFlag := flag.String("likely_duplicates", "", "Likely duplicates directory")
+	var paths multiFlag
+	flag.Var(&paths, "path", "Root to scan, repeatable (also positional args)")
+	var origins multiFlag
+	flag.Var(&origins, "origin", "Protected directory, repeatable")
+	var likelies multiFlag
+	flag.Var(&likelies, "likely_duplicates", "Prefer deleting copies here, repeatable")
+	applyFile := flag.String("apply", "", "Apply a dry-run output file (delete all DEL entries)")
 	var excludes multiFlag
 	flag.Var(&excludes, "exclude", "Exclude pattern, repeatable")
 	hashAlgo := flag.String("hash-algo", "blake3", "sha256|xxh3|blake3")
@@ -191,60 +264,51 @@ func main() {
 		return
 	}
 
+	if *applyFile != "" {
+		applyPlan(*applyFile, *trashMode, *deleteEmptyDirs)
+		return
+	}
+
 	args := flag.Args()
-	var root string
-	if *pathFlag != "" {
-		root = *pathFlag
-	} else if len(args) > 0 {
-		root = args[0]
-	} else {
-		fmt.Fprintln(os.Stderr, "Error: PATH is required")
+	for _, a := range args {
+		paths = append(paths, a)
+	}
+	if len(paths) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: at least one PATH is required")
 		Usage()
 		os.Exit(1)
 	}
 
 	var err error
-	root, err = filepath.Abs(root)
-	if err != nil {
-		log.Fatalf("failed to normalize root: %v", err)
-	}
-	root = filepath.Clean(root)
-	if !fileExists(root) {
-		log.Fatalf("root not found: %s", root)
-	}
-
-	origin := ""
-	if *originFlag != "" {
-		origin, err = filepath.Abs(*originFlag)
-		if err != nil {
-			log.Fatalf("failed to normalize origin: %v", err)
+	var roots []string
+	for _, raw := range paths {
+		abs, absErr := filepath.Abs(raw)
+		if absErr != nil {
+			log.Fatalf("failed to normalize path %s: %v", raw, absErr)
 		}
-		origin = filepath.Clean(origin)
-		if origin == root {
-			log.Fatalf("origin must not equal root")
+		abs = filepath.Clean(abs)
+		if !fileExists(abs) {
+			log.Fatalf("path not found: %s", abs)
 		}
-		if !rules.IsUnder(origin, root) {
-			log.Fatalf("origin path %s not under root %s", origin, root)
-		}
+		roots = append(roots, abs)
 	}
 
-	likely := ""
-	if *likelyFlag != "" {
-		likely, err = filepath.Abs(*likelyFlag)
-		if err != nil {
-			log.Fatalf("failed to normalize likely_duplicates: %v", err)
+	var normOrigins []string
+	for _, raw := range origins {
+		abs, absErr := filepath.Abs(raw)
+		if absErr != nil {
+			log.Fatalf("failed to normalize origin %s: %v", raw, absErr)
 		}
-		likely = filepath.Clean(likely)
-		if likely == root {
-			log.Fatalf("likely_duplicates must not equal root")
-		}
-		if !rules.IsUnder(likely, root) {
-			log.Fatalf("likely_duplicates path %s not under root %s", likely, root)
-		}
+		normOrigins = append(normOrigins, filepath.Clean(abs))
 	}
 
-	if origin != "" && likely != "" && origin == likely {
-		log.Fatalf("origin and likely_duplicates must differ")
+	var normLikelies []string
+	for _, raw := range likelies {
+		abs, absErr := filepath.Abs(raw)
+		if absErr != nil {
+			log.Fatalf("failed to normalize likely_duplicates %s: %v", raw, absErr)
+		}
+		normLikelies = append(normLikelies, filepath.Clean(abs))
 	}
 
 	allowedExts := map[string]struct{}{}
@@ -281,7 +345,7 @@ func main() {
 	activeScanID := *scanIDFlag
 	if dbEnabled {
 		if activeScanID == "" {
-			activeScanID = fmt.Sprintf("%s_%d", filepath.Base(root), started.UnixNano())
+			activeScanID = fmt.Sprintf("%s_%d", filepath.Base(roots[0]), started.UnixNano())
 		}
 		if *resumeFlag {
 			var status string
@@ -292,7 +356,7 @@ func main() {
 			_, _ = db.Exec("UPDATE scans SET status='in_progress', completed_at=NULL WHERE id=?", activeScanID)
 		} else {
 			_, _ = db.Exec("INSERT OR REPLACE INTO scans(id,root,started_at,status) VALUES(?,?,?,'in_progress')",
-				activeScanID, root, started.UnixNano())
+				activeScanID, strings.Join(roots, "|"), started.UnixNano())
 		}
 	}
 
@@ -304,67 +368,69 @@ func main() {
 	var walkErrors int64
 	var dotUnderscoreSkipped int64
 
-	walkFn := func(path string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			walkErrors++
-			return nil
-		}
-
-		if info.IsDir() {
-			if shouldSkipDir(info.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-
-		base := filepath.Base(path)
-		if strings.HasPrefix(base, "._") {
-			dotUnderscoreSkipped++
-			return nil
-		}
-
-		walkedFiles++
-
-		rel, _ := filepath.Rel(root, path)
-		for _, pat := range excludes {
-			if matched, _ := filepath.Match(pat, rel); matched {
+	makeWalkFn := func(scanRoot string) filepath.WalkFunc {
+		return func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				walkErrors++
 				return nil
 			}
-			if matched, _ := filepath.Match(pat, base); matched {
+
+			if info.IsDir() {
+				if shouldSkipDir(info.Name()) {
+					return filepath.SkipDir
+				}
 				return nil
 			}
-		}
 
-		if len(allowedExts) > 0 {
-			ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(base), "."))
-			if _, ok := allowedExts[ext]; !ok {
+			if !info.Mode().IsRegular() {
 				return nil
 			}
-		}
 
-		if info.Size() < *minSize {
+			base := filepath.Base(path)
+			if strings.HasPrefix(base, "._") {
+				dotUnderscoreSkipped++
+				return nil
+			}
+
+			walkedFiles++
+
+			rel, _ := filepath.Rel(scanRoot, path)
+			for _, pat := range excludes {
+				if matched, _ := filepath.Match(pat, rel); matched {
+					return nil
+				}
+				if matched, _ := filepath.Match(pat, base); matched {
+					return nil
+				}
+			}
+
+			if len(allowedExts) > 0 {
+				ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(base), "."))
+				if _, ok := allowedExts[ext]; !ok {
+					return nil
+				}
+			}
+
+			if info.Size() < *minSize {
+				return nil
+			}
+
+			if *maxSize > 0 && info.Size() > *maxSize {
+				return nil
+			}
+
+			if st, ok := info.Sys().(*syscall.Stat_t); ok {
+				if _, seen := seenInodes[st.Ino]; seen {
+					return nil
+				}
+				seenInodes[st.Ino] = struct{}{}
+			}
+
+			scannedFiles++
+			seenDirs[filepath.Dir(path)] = struct{}{}
+			sizeMap[info.Size()] = append(sizeMap[info.Size()], path)
 			return nil
 		}
-
-		if *maxSize > 0 && info.Size() > *maxSize {
-			return nil
-		}
-
-		if st, ok := info.Sys().(*syscall.Stat_t); ok {
-			if _, seen := seenInodes[st.Ino]; seen {
-				return nil
-			}
-			seenInodes[st.Ino] = struct{}{}
-		}
-
-		scannedFiles++
-		seenDirs[filepath.Dir(path)] = struct{}{}
-		sizeMap[info.Size()] = append(sizeMap[info.Size()], path)
-		return nil
 	}
 
 	if *resumeFlag && dbEnabled {
@@ -383,14 +449,16 @@ func main() {
 		}
 		_ = rows.Close()
 	} else {
-		if err = filepath.Walk(root, walkFn); err != nil {
-			log.Fatalf("walk failed: %v", err)
+		for _, scanRoot := range roots {
+			if err = filepath.Walk(scanRoot, makeWalkFn(scanRoot)); err != nil {
+				log.Fatalf("walk failed: %v", err)
+			}
 		}
 		if dbEnabled {
 			if tx, txErr := db.Begin(); txErr == nil {
 				if stmt, stErr := tx.Prepare("INSERT OR IGNORE INTO scan_files(scan_id,path,size) VALUES(?,?,?)"); stErr == nil {
-					for sz, paths := range sizeMap {
-						for _, p := range paths {
+					for sz, ps := range sizeMap {
+						for _, p := range ps {
 							_, _ = stmt.Exec(activeScanID, p, sz)
 						}
 					}
@@ -402,7 +470,7 @@ func main() {
 	}
 
 	if *modeFlag == "near-image" {
-		runNearImageMode(root, origin, likely, *workers, *threshold, *deleteMode, *trashMode, *deleteEmptyDirs, *jsonMode, *csvMode, sizeMap, seenDirs, started)
+		runNearImageMode(roots, normOrigins, normLikelies, *workers, *threshold, *deleteMode, *trashMode, *deleteEmptyDirs, *jsonMode, *csvMode, sizeMap, started)
 		return
 	}
 
@@ -594,14 +662,14 @@ func main() {
 		duplicateGroups++
 
 		preferred := rules.SortByPreference(group)
-		toKeep, toDelete := rules.SelectKeepDelete(preferred, origin, likely)
+		toKeep, toDelete := rules.SelectKeepDelete(preferred, normOrigins, normLikelies)
 
 		toDelete = rules.SortByPreference(toDelete)
 
-		if origin != "" {
+		if len(normOrigins) > 0 {
 			hasOrigin := false
 			for _, p := range group {
-				if rules.IsUnder(p, origin) {
+				if rules.IsUnderAny(p, normOrigins) {
 					hasOrigin = true
 					break
 				}
@@ -661,11 +729,11 @@ func main() {
 
 		for _, p := range toKeep {
 			reason := ""
-			if origin != "" && rules.IsUnder(p, origin) {
+			if rules.IsUnderAny(p, normOrigins) {
 				reason = "  [origin]"
-			} else if likely != "" && !rules.IsUnder(p, likely) && func() bool {
+			} else if len(normLikelies) > 0 && !rules.IsUnderAny(p, normLikelies) && func() bool {
 				for _, d := range toDelete {
-					if rules.IsUnder(d, likely) {
+					if rules.IsUnderAny(d, normLikelies) {
 						return true
 					}
 				}
@@ -685,9 +753,13 @@ func main() {
 			fmt.Fprintln(fOut, line)
 			fmt.Println(line)
 			if *deleteMode {
-				_ = os.Remove(p)
+				if os.Remove(p) == nil && *deleteEmptyDirs {
+					pruneEmptyParents(filepath.Dir(p), roots)
+				}
 			} else if *trashMode {
-				_ = trashFile(p)
+				if trashFile(p) == nil && *deleteEmptyDirs {
+					pruneEmptyParents(filepath.Dir(p), roots)
+				}
 			}
 		}
 	}
@@ -729,28 +801,6 @@ func main() {
 				break
 			}
 			fmt.Printf("  %4d  %s\n", dc.count, dc.dir)
-		}
-	}
-
-	if (*deleteMode || *trashMode) && *deleteEmptyDirs {
-		var dirs []string
-		for d := range seenDirs {
-			dirs = append(dirs, d)
-		}
-		sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
-		var removedDirs int64
-		for _, d := range dirs {
-			if d == root {
-				continue
-			}
-			if entries, err := os.ReadDir(d); err == nil && len(entries) == 0 {
-				if os.Remove(d) == nil {
-					removedDirs++
-				}
-			}
-		}
-		if removedDirs > 0 {
-			fmt.Printf("  Empty dirs removed: %d\n", removedDirs)
 		}
 	}
 

@@ -20,6 +20,15 @@ func IsUnder(path, dir string) bool {
 	return strings.HasPrefix(path, dir+string(os.PathSeparator))
 }
 
+func IsUnderAny(path string, dirs []string) bool {
+	for _, d := range dirs {
+		if d != "" && IsUnder(path, d) {
+			return true
+		}
+	}
+	return false
+}
+
 func PreferDelete(path string) int {
 	switch {
 	case PendRe.MatchString(path):
@@ -52,18 +61,20 @@ func SortByPreference(paths []string) []string {
 	return out
 }
 
-func SelectKeepDelete(preferred []string, origin, likely string) (toKeep, toDelete []string) {
+func SelectKeepDelete(preferred, origins, likelies []string) (toKeep, toDelete []string) {
+	hasOrigins := len(origins) > 0
+	hasLikelies := len(likelies) > 0
 	switch {
-	case origin == "" && likely == "":
+	case !hasOrigins && !hasLikelies:
 		toKeep = preferred[:1]
 		if len(preferred) > 1 {
 			toDelete = preferred[1:]
 		}
 
-	case origin != "" && likely == "":
+	case hasOrigins && !hasLikelies:
 		var inOrigin, outside []string
 		for _, p := range preferred {
-			if IsUnder(p, origin) {
+			if IsUnderAny(p, origins) {
 				inOrigin = append(inOrigin, p)
 			} else {
 				outside = append(outside, p)
@@ -79,10 +90,10 @@ func SelectKeepDelete(preferred []string, origin, likely string) (toKeep, toDele
 			}
 		}
 
-	case origin == "" && likely != "":
+	case !hasOrigins && hasLikelies:
 		var inLikely, outside []string
 		for _, p := range preferred {
-			if IsUnder(p, likely) {
+			if IsUnderAny(p, likelies) {
 				inLikely = append(inLikely, p)
 			} else {
 				outside = append(outside, p)
@@ -101,13 +112,13 @@ func SelectKeepDelete(preferred []string, origin, likely string) (toKeep, toDele
 			}
 		}
 
-	case origin != "" && likely != "":
+	case hasOrigins && hasLikelies:
 		var inOrigin, inLikely, outside []string
 		for _, p := range preferred {
 			switch {
-			case IsUnder(p, origin):
+			case IsUnderAny(p, origins):
 				inOrigin = append(inOrigin, p)
-			case IsUnder(p, likely):
+			case IsUnderAny(p, likelies):
 				inLikely = append(inLikely, p)
 			default:
 				outside = append(outside, p)

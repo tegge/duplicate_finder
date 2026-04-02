@@ -36,14 +36,13 @@ type nearReportJSON struct {
 }
 
 // runNearImageMode is the entry point for -mode near-image.
-// It receives the already-walked sizeMap (all candidate files) and seenDirs
-// so the walk is not repeated.
+// It receives the already-walked sizeMap (all candidate files).
 func runNearImageMode(
-	root, origin, likely string,
+	roots []string,
+	origins, likelies []string,
 	workers, threshold int,
 	deleteMode, trashMode, deleteEmptyDirs, jsonMode, csvMode bool,
 	sizeMap map[int64][]string,
-	seenDirs map[string]struct{},
 	started time.Time,
 ) {
 	// Collect all files from sizeMap into a flat slice.
@@ -151,12 +150,12 @@ func runNearImageMode(
 
 		// Respect origin/likely_duplicates path policies.
 		var toKeep, toDelete []*nearimage.ImageInfo
-		if origin != "" || likely != "" {
+		if len(origins) > 0 || len(likelies) > 0 {
 			var keepPaths, deletePaths []string
 			for _, img := range sorted {
 				keepPaths = append(keepPaths, img.Path)
 			}
-			keepPaths, deletePaths = rules.SelectKeepDelete(keepPaths, origin, likely)
+			keepPaths, deletePaths = rules.SelectKeepDelete(keepPaths, origins, likelies)
 			keepSet := make(map[string]struct{}, len(keepPaths))
 			for _, p := range keepPaths {
 				keepSet[p] = struct{}{}
@@ -229,9 +228,13 @@ func runNearImageMode(
 				csvRecords = append(csvRecords, csvRec{dupGroups, minDist, img.SizeB, "DELETE", img.Path})
 			}
 			if deleteMode {
-				_ = os.Remove(img.Path)
+				if os.Remove(img.Path) == nil && deleteEmptyDirs {
+					pruneEmptyParents(filepath.Dir(img.Path), roots)
+				}
 			} else if trashMode {
-				_ = trashFile(img.Path)
+				if trashFile(img.Path) == nil && deleteEmptyDirs {
+					pruneEmptyParents(filepath.Dir(img.Path), roots)
+				}
 			}
 		}
 	}
@@ -261,29 +264,6 @@ func runNearImageMode(
 				break
 			}
 			fmt.Printf("  %4d  %s\n", dc.count, dc.dir)
-		}
-	}
-
-	// delete-empty-dirs
-	if (deleteMode || trashMode) && deleteEmptyDirs {
-		var dirs []string
-		for d := range seenDirs {
-			dirs = append(dirs, d)
-		}
-		sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
-		var removedDirs int64
-		for _, d := range dirs {
-			if d == root {
-				continue
-			}
-			if entries, err := os.ReadDir(d); err == nil && len(entries) == 0 {
-				if os.Remove(d) == nil {
-					removedDirs++
-				}
-			}
-		}
-		if removedDirs > 0 {
-			fmt.Printf("  Empty dirs removed: %d\n", removedDirs)
 		}
 	}
 
